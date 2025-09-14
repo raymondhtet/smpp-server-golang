@@ -46,6 +46,15 @@ func handleConnection(conn net.Conn) {
 	}
 	req.ParseHeader(headerByte)
 
+	switch req.Header.CommandId.Value {
+	case pdu.BindTransceiver:
+		println("Bind Transceiver")
+	case pdu.EnquireLink:
+		println("EnquireLink")
+	default:
+		println("Unsupported CommandId")
+	}
+
 	//totalPacketLength := binary.BigEndian.Uint32(headerByte)
 	//
 	//println("Total Packet received:", hex.EncodeToString(headerByte), " and value:", totalPacketLength)
