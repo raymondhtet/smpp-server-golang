@@ -48,6 +48,8 @@ func handleConnection(conn net.Conn) {
 
 	switch req.Header.CommandId.Value {
 	case pdu.BindTransceiver:
+		response := pdu.Pdu{}
+		response.GetBytes(conn, req.Header.SequenceNumber.Value)
 		println("Bind Transceiver")
 	case pdu.EnquireLink:
 		println("EnquireLink")

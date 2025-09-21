@@ -1,7 +1,9 @@
 package pdu
 
 import (
+	"encoding/binary"
 	"encoding/hex"
+	"net"
 	"smpp-server-golang/internal/helpers"
 )
 
@@ -39,6 +41,39 @@ func (p *Pdu) ParseHeader(headerData []byte) {
 	p.Header.CommandId.Print()
 	p.Header.CommandStatus.Print()
 	p.Header.SequenceNumber.Print()
+}
+
+func (p *Pdu) Reverse(s []byte) {
+	for i, j := 0, len(s)-1; i < j; i, j = i+1, j-1 {
+		s[i], s[j] = s[j], s[i]
+	}
+}
+
+func (p *Pdu) GetBytes(conn net.Conn, sequenceNumber uint32) {
+	//0000001180000009000000000000000100
+	responseSize := HeaderSize + len(p.BodyByte)
+	println("Total size:", responseSize)
+
+	response := make([]byte, responseSize)
+	response = append(response, byte(responseSize))
+	p.Reverse(response)
+	println("CommandLength:", hex.EncodeToString(response))
+	binary.BigEndian.PutUint32(response, BindReceiverResponse)
+	println("CommandId:", hex.EncodeToString(response))
+	response = append(response, 0)
+	println("CommandStatus:", hex.EncodeToString(response))
+	binary.LittleEndian.PutUint32(response[4:], sequenceNumber)
+	println("SequenceNumber:", hex.EncodeToString(response))
+	//wholeBody := append(p.BodyByte, "\000"...)
+	//response = append(response, wholeBody...)
+
+	println("Writing TCP back:", hex.EncodeToString(response))
+
+	_, err := conn.Write(response)
+	if err != nil {
+		println("Write error:", err)
+	}
+
 }
 
 type Header struct {
