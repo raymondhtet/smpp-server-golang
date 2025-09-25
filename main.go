@@ -35,37 +35,75 @@ func main() {
 }
 
 func handleConnection(conn net.Conn) {
+	defer func(conn net.Conn) {
+		err := conn.Close()
+		if err != nil {
+			println("Error closing connection", err.Error())
+		}
+	}(conn)
 
 	println("New connection from " + conn.RemoteAddr().String())
-	req := pdu.Pdu{}
 
-	headerByte := make([]byte, pdu.HeaderSize)
-	_, err := conn.Read(headerByte)
-	if err != nil {
-		println("Error reading total packet size", err.Error())
-		return
+	for {
+		req := pdu.Pdu{}
+
+		// Read header
+		headerByte := make([]byte, pdu.HeaderSize)
+		_, err := conn.Read(headerByte)
+		if err != nil {
+			println("Error reading total packet size", err.Error())
+			return
+		}
+		req.ParseHeader(headerByte)
+
+		/*
+			// Read body if present
+			commandLength := req.Header.CommandLength.GetValue()
+			bodyLength := int(commandLength) - pdu.HeaderSize
+
+			if bodyLength > 0 {
+				bodyByte := make([]byte, bodyLength)
+				_, err := conn.Read(bodyByte)
+				if err != nil {
+					println("Error reading body:", err.Error())
+					return
+				}
+				req.BodyByte = bodyByte
+				println("Read body of", bodyLength, "bytes")
+			}
+		*/
+
+		response := pdu.Pdu{}
+		println("Received Command ID:", req.Header.CommandId.GetValue())
+
+		switch req.Header.CommandId.GetValue() {
+		case pdu.BindTransceiver:
+			println("Receiving Bind Transceiver Command")
+			response.Header = pdu.NewHeader(pdu.BindTransceiverResponse, 0, req.Header.SequenceNumber.GetValue())
+			response.BodyByte = []byte("\000")
+
+		case pdu.EnquireLink:
+			println("Receiving Enquire Link Command")
+			// 0000001180000015000000000000000500 -> golang
+			// 00000010800000150000000000000002 ->
+			response.Header = pdu.NewHeader(pdu.EnquireLinkResponse, 0, req.Header.SequenceNumber.GetValue())
+
+		case pdu.UnbindTransceiver:
+			println("Receiving Unbind Transceiver Command")
+			response.Header = pdu.NewHeader(pdu.UnbindTransceiverResponse, 0, req.Header.SequenceNumber.GetValue())
+
+			responseBytes := pdu.GetBytes(response)
+			pdu.SendPdu(conn, responseBytes)
+			return
+
+		default:
+			println("Unsupported CommandId")
+			continue // Skip sending response for unsupported commands
+		}
+
+		// Only send response if header was created
+		responseBytes := pdu.GetBytes(response)
+		pdu.SendPdu(conn, responseBytes)
+
 	}
-	req.ParseHeader(headerByte)
-
-	response := pdu.Pdu{}
-	println("Received Command ID:", req.Header.CommandId.GetValue())
-	switch req.Header.CommandId.GetValue() {
-	case pdu.BindTransceiver:
-		println("Receiving Bind Transceiver Command")
-		response.Header = pdu.NewHeader(pdu.BindTransceiverResponse, 0, req.Header.SequenceNumber.Value)
-
-	case pdu.EnquireLink:
-		println("Receiving Enquire Link Command")
-		response.Header = pdu.NewHeader(pdu.EnquireLinkResponse, 0, req.Header.SequenceNumber.Value)
-
-	case pdu.UnbindTransceiver:
-		println("Receiving Unbind Transceiver Command")
-		response.Header = pdu.NewHeader(pdu.UnbindTransceiverResponse, 0, req.Header.SequenceNumber.Value)
-
-	default:
-		println("Unsupported CommandId")
-	}
-
-	responseBytes := pdu.GetBytes(response)
-	pdu.SendPdu(conn, responseBytes)
 }

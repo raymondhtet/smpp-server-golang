@@ -75,29 +75,13 @@ func (p *Pdu) ParseHeader(headerData []byte) {
 	p.Header.SequenceNumber.Print()
 }
 
-func (p *Pdu) Reverse(s []byte) {
-	for i, j := 0, len(s)-1; i < j; i, j = i+1, j-1 {
-		s[i], s[j] = s[j], s[i]
-	}
-}
-
 func GetBytes(p Pdu) []byte {
 
 	bodyLength := len(p.BodyByte)
-
-	if bodyLength < 1 {
-		// for null terminated string body
-		bodyLength = 1
-	}
-
 	responseSize := HeaderSize + bodyLength
 	println("Total size:", responseSize)
 
 	response := make([]byte, responseSize)
-
-	if bodyLength > 1 {
-		response = append(response, p.BodyByte...)
-	}
 
 	// Command Length (writes to buffer[0:4])
 	binary.BigEndian.PutUint32(response[0:], uint32(responseSize))
@@ -110,6 +94,10 @@ func GetBytes(p Pdu) []byte {
 
 	// Sequence Number (writes to buffer[12:16])
 	binary.BigEndian.PutUint32(response[12:], p.Header.SequenceNumber.GetValue())
+
+	if bodyLength > 0 {
+		copy(response[HeaderSize:], p.BodyByte)
+	}
 
 	println("Writing TCP back:", hex.EncodeToString(response))
 
