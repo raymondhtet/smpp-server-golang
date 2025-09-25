@@ -25,16 +25,17 @@ func main() {
 
 	for {
 		conn, err := listener.Accept()
+
 		if err != nil {
 			println("Error accepting connection", err.Error())
 		}
 		println("Accepted new connection")
 		go handleConnection(conn)
 	}
-
 }
 
 func handleConnection(conn net.Conn) {
+
 	println("New connection from " + conn.RemoteAddr().String())
 	req := pdu.Pdu{}
 
@@ -46,37 +47,25 @@ func handleConnection(conn net.Conn) {
 	}
 	req.ParseHeader(headerByte)
 
-	switch req.Header.CommandId.Value {
+	response := pdu.Pdu{}
+	println("Received Command ID:", req.Header.CommandId.GetValue())
+	switch req.Header.CommandId.GetValue() {
 	case pdu.BindTransceiver:
-		response := pdu.Pdu{}
-		response.GetBytes(conn, req.Header.SequenceNumber.Value)
-		println("Bind Transceiver")
+		println("Receiving Bind Transceiver Command")
+		response.Header = pdu.NewHeader(pdu.BindTransceiverResponse, 0, req.Header.SequenceNumber.Value)
+
 	case pdu.EnquireLink:
-		println("EnquireLink")
+		println("Receiving Enquire Link Command")
+		response.Header = pdu.NewHeader(pdu.EnquireLinkResponse, 0, req.Header.SequenceNumber.Value)
+
+	case pdu.UnbindTransceiver:
+		println("Receiving Unbind Transceiver Command")
+		response.Header = pdu.NewHeader(pdu.UnbindTransceiverResponse, 0, req.Header.SequenceNumber.Value)
+
 	default:
 		println("Unsupported CommandId")
 	}
 
-	//totalPacketLength := binary.BigEndian.Uint32(headerByte)
-	//
-	//println("Total Packet received:", hex.EncodeToString(headerByte), " and value:", totalPacketLength)
-	//
-	//pduSize := totalPacketLength - constants.HeaderSize
-	//
-	//println("PDU Size: ", pduSize)
-	//
-	//pduBytes := make([]byte, pduSize)
-	//reader := bufio.NewReader(conn)
-	//_, err = io.ReadFull(reader, pduBytes)
-	//
-	//if err != nil {
-	//	println("Error reading full size", err.Error())
-	//	return
-	//}
-	//
-	//println("PDU received: ", hex.EncodeToString(pduBytes))
-	//
-	//wholePdu := append(headerByte, pduBytes...)
-	//
-	//println("Whole PDU received: ", hex.EncodeToString(wholePdu))
+	responseBytes := pdu.GetBytes(response)
+	pdu.SendPdu(conn, responseBytes)
 }

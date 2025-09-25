@@ -12,12 +12,13 @@ const (
 )
 
 const (
-	BindReceiver            = 0x80000000
-	BindTransceiver         = 0x00000009
-	EnquireLink             = 0x00000015
-	BindReceiverResponse    = 0x80000001
-	BindTransceiverResponse = 0x80000009
-	EnquireLinkResponse     = 0x80000015
+	BindTransceiver   = 0x00000009
+	EnquireLink       = 0x00000015
+	UnbindTransceiver = 0x00000006
+
+	BindTransceiverResponse   = 0x80000009
+	EnquireLinkResponse       = 0x80000015
+	UnbindTransceiverResponse = 0x80000006
 )
 
 type Pdu struct {
@@ -27,13 +28,44 @@ type Pdu struct {
 	BodyByte   []byte
 }
 
+type VisualizationObject[T any] struct {
+	Bytes       []byte
+	Value       T
+	IsBigEndian bool
+	Name        string
+}
+
+func NewHeader(commandId uint32, commandStatus uint32, sequenceNumber uint32) *Header {
+
+	commandIdBytes, err := helpers.AnyToBytes(commandId)
+	if err != nil {
+		return nil
+	}
+
+	commandStatusBytes, err := helpers.AnyToBytes(commandStatus)
+	if err != nil {
+		return nil
+	}
+
+	sequenceNumberBytes, err := helpers.AnyToBytes(sequenceNumber)
+	if err != nil {
+		return nil
+	}
+	newHeader := &Header{}
+	newHeader.CommandId = helpers.NewVisualizationObject[uint32](commandIdBytes, helpers.WithBigEndian[uint32](true))
+	newHeader.CommandStatus = helpers.NewVisualizationObject[uint32](commandStatusBytes, helpers.WithBigEndian[uint32](true))
+	newHeader.SequenceNumber = helpers.NewVisualizationObject[uint32](sequenceNumberBytes, helpers.WithBigEndian[uint32](true))
+
+	return newHeader
+}
+
 func (p *Pdu) ParseHeader(headerData []byte) {
 	p.HeaderByte = headerData
 	p.Header = &Header{}
-	p.Header.CommandLength = helpers.NewVisualizationObject[uint32](headerData[:4], "Command Length", helpers.WithBigEndian[uint32](true))
-	p.Header.CommandId = helpers.NewVisualizationObject[uint32](headerData[4:8], "Command Id", helpers.WithBigEndian[uint32](true))
-	p.Header.CommandStatus = helpers.NewVisualizationObject[uint32](headerData[8:12], "Command Status", helpers.WithBigEndian[uint32](true))
-	p.Header.SequenceNumber = helpers.NewVisualizationObject[uint32](headerData[12:16], "Sequence Number", helpers.WithBigEndian[uint32](true))
+	p.Header.CommandLength = helpers.NewVisualizationObject[uint32](headerData[:4], helpers.WithName[uint32]("Command Length"), helpers.WithBigEndian[uint32](true))
+	p.Header.CommandId = helpers.NewVisualizationObject[uint32](headerData[4:8], helpers.WithName[uint32]("Command Id"), helpers.WithBigEndian[uint32](true))
+	p.Header.CommandStatus = helpers.NewVisualizationObject[uint32](headerData[8:12], helpers.WithName[uint32]("Command Status"), helpers.WithBigEndian[uint32](true))
+	p.Header.SequenceNumber = helpers.NewVisualizationObject[uint32](headerData[12:16], helpers.WithName[uint32]("Sequence Number"), helpers.WithBigEndian[uint32](true))
 
 	println("Header Hex:", hex.EncodeToString(headerData))
 
@@ -49,31 +81,48 @@ func (p *Pdu) Reverse(s []byte) {
 	}
 }
 
-func (p *Pdu) GetBytes(conn net.Conn, sequenceNumber uint32) {
-	//0000001180000009000000000000000100
-	responseSize := HeaderSize + len(p.BodyByte)
+func GetBytes(p Pdu) []byte {
+
+	bodyLength := len(p.BodyByte)
+
+	if bodyLength < 1 {
+		// for null terminated string body
+		bodyLength = 1
+	}
+
+	responseSize := HeaderSize + bodyLength
 	println("Total size:", responseSize)
 
 	response := make([]byte, responseSize)
-	response = append(response, byte(responseSize))
-	p.Reverse(response)
-	println("CommandLength:", hex.EncodeToString(response))
-	binary.BigEndian.PutUint32(response, BindReceiverResponse)
-	println("CommandId:", hex.EncodeToString(response))
-	response = append(response, 0)
-	println("CommandStatus:", hex.EncodeToString(response))
-	binary.LittleEndian.PutUint32(response[4:], sequenceNumber)
-	println("SequenceNumber:", hex.EncodeToString(response))
-	//wholeBody := append(p.BodyByte, "\000"...)
-	//response = append(response, wholeBody...)
+
+	if bodyLength > 1 {
+		response = append(response, p.BodyByte...)
+	}
+
+	// Command Length (writes to buffer[0:4])
+	binary.BigEndian.PutUint32(response[0:], uint32(responseSize))
+
+	// Command ID (writes to buffer[4:8])
+	binary.BigEndian.PutUint32(response[4:], p.Header.CommandId.GetValue())
+
+	// Command Status (writes to buffer[8:12])
+	binary.BigEndian.PutUint32(response[8:], p.Header.CommandStatus.GetValue())
+
+	// Sequence Number (writes to buffer[12:16])
+	binary.BigEndian.PutUint32(response[12:], p.Header.SequenceNumber.GetValue())
 
 	println("Writing TCP back:", hex.EncodeToString(response))
 
+	return response
+}
+
+func SendPdu(conn net.Conn, response []byte) {
 	_, err := conn.Write(response)
 	if err != nil {
 		println("Write error:", err)
 	}
 
+	println("Successfully responded back:", hex.EncodeToString(response))
 }
 
 type Header struct {
